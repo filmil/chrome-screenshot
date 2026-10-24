@@ -1,0 +1,86 @@
+:root {
+  --bg: #f1f3f4;
+  --panel: #ffffff;
+  --fg: #202124;
+  --muted: #5f6368;
+  --accent: #1a73e8;
+  --error: #c5221f;
+  --border: #dadce0;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121212;
+    --panel: #202124;
+    --fg: #e8eaed;
+    --muted: #9aa0a6;
+    --accent: #8ab4f8;
+    --error: #f28b82;
+    --border: #5f6368;
+  }
+}
+body {
+  margin: 0;
+  font: 13px/1.4 system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 8px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+.buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+button {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+button#save { background: var(--accent); border-color: var(--accent); color: var(--panel); }
+button:disabled { opacity: 0.5; cursor: default; }
+/* On a line of its own, one line high, so that the image does not move
+   when the text changes during a drag. */
+#info {
+  flex-basis: 100%;
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+#note, #error { margin: 8px 16px 0; }
+#note { color: var(--muted); }
+#error { color: var(--error); }
+#note:empty, #error:empty { display: none; }
+main { padding: 16px; }
+#stage {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  cursor: crosshair;
+  user-select: none;
+  touch-action: none;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 30%);
+}
+#shot { display: block; max-width: 100%; height: auto; }
+#selection {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px dashed #fff;
+  outline: 1px dashed #000;
+  /* Darkens everything outside the selection. */
+  box-shadow: 0 0 0 100000px rgb(0 0 0 / 45%);
+  cursor: move;
+}
+#selection[hidden] { display: none; }

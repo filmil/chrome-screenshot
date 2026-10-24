@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Screenshot — filmil's screenshot</title>
+  <link rel="stylesheet" href="editor.css">
+  <script type="module" src="editor.js"></script>
+</head>
+<body>
+  <header>
+    <div class="buttons">
+      <button id="save" type="button" title="Ctrl+S">Save</button>
+      <button id="copy" type="button" title="Ctrl+C">Copy</button>
+      <button id="crop" type="button" disabled>Crop to selection</button>
+      <button id="clear" type="button" disabled title="Esc">Clear selection</button>
+      <button id="undo" type="button" disabled title="Ctrl+Z">Undo crop</button>
+    </div>
+    <p id="info" role="status"></p>
+  </header>
+  <p id="note"></p>
+  <p id="error" role="alert"></p>
+  <main>
+    <div id="stage">
+      <img id="shot" alt="The screenshot" draggable="false">
+      <div id="selection" hidden></div>
+    </div>
+  </main>
+</body>
+</html>

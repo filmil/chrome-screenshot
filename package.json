@@ -1,0 +1,14 @@
+{
+  "name": "chrome-screenshot",
+  "private": true,
+  "description": "A Chrome extension that takes screenshots of a tab or a whole page, with no network.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "test:e2e": "node --test test/e2e.test.mjs",
+    "icons": "python3 scripts/make_icons.py extension/icons"
+  },
+  "devDependencies": {
+    "puppeteer": "25.13.0"
+  }
+}

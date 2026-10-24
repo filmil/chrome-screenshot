@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# The extension's files as they are in the source tree. The source
+# manifest works as it is with "Load unpacked"; the release replaces it
+# with one that has the release version.
+exports_files(["manifest.json"])
+
+filegroup(
+    name = "srcs",
+    srcs = glob(
+        ["**"],
+        exclude = ["BUILD.bazel", "manifest.json"],
+    ),
+    visibility = ["//visibility:public"],
+)
