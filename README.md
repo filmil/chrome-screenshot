@@ -28,7 +28,7 @@ when you ask it for a screenshot of that tab.
   `eval`, or a URL, or if the manifest asks for more.
 - **Keeps nothing.** A screenshot stays in the browser, in the
   extension's own storage, while its tab is open, so that reloading the
-  tab keeps it. Closing the tab deletes it. Saving and copying are up to
+  tab keeps it, cropped as you left it. Closing the tab deletes it. Saving and copying are up to
   you.
 - **Small.** About 750 lines of JavaScript, HTML and CSS in
   [`extension/`](extension/), with no dependencies and no build step: the
@@ -42,8 +42,9 @@ Click the extension's icon and choose:
 - **The whole page**: the extension scrolls through the page a screen at
   a time, captures each screen, and joins them into one image. The icon
   shows how far it has got. The page goes back to where it was scrolled
-  when it is done. Headers and other parts of the page that stay fixed on
-  the screen show once, at the top, not on every screen.
+  when it is done. Headers and footers that stay fixed on the screen
+  show once, not on every screen: a header at the top of the image, and
+  a footer at the bottom.
 
 The screenshot opens in a new tab. **Drag** on it to select part of it;
 drag the selection to move it, and press **Esc** to clear it.
@@ -159,7 +160,8 @@ npm run test:e2e    # loads the extension into Chrome for Testing; ~10 s
 
 It clicks the extension's icon on a local test page, as a user would,
 takes both kinds of screenshot, and checks their size and the colors at
-known places; then it selects, crops and undoes in the editor. On Ubuntu
+known places, including where fixed headers, fixed footers and sticky
+bars end up; then it selects, crops, reloads and undoes in the editor. On Ubuntu
 23.10 and later, Chrome's sandbox cannot start without user namespaces;
 run it with `E2E_NO_SANDBOX=1`, or allow them with
 `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`. It loads

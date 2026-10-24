@@ -3,13 +3,13 @@
 // saves or copies the selection, or the whole image when nothing is
 // selected.
 import { moveRect, rectBetween } from "./lib.js";
-import { getShot } from "./store.js";
+import { getShot, putShot } from "./store.js";
 
 const $ = (id) => document.getElementById(id);
 const img = $("shot");
 const box = $("selection");
 
-let shot = null; // { blob, name }
+let shot = null; // as stored: { id, blob, name, ... }
 let size = { width: 0, height: 0 }; // the image's own pixels
 let selection = null; // { x, y, width, height }, in image pixels
 const undo = []; // the images before each crop
@@ -51,9 +51,11 @@ function render() {
     + ". Drag on the image to select part of it.";
 }
 
+// A click, or a drag of a pixel or two, selects nothing.
+const big = (rect) => rect && rect.width >= 3 && rect.height >= 3;
+
 function setSelection(rect) {
-  // A click, or a drag of a pixel or two, selects nothing.
-  selection = rect && rect.width >= 3 && rect.height >= 3 ? rect : null;
+  selection = big(rect) ? rect : null;
   render();
 }
 
@@ -71,28 +73,25 @@ $("stage").addEventListener("pointerdown", (event) => {
   event.preventDefault();
   $("stage").setPointerCapture(event.pointerId);
   const start = point(event);
-  drag = event.target === box && selection
-    ? { move: true, start, from: selection }
-    : { move: false, start };
+  if (event.target === box && selection) {
+    drag = { move: true, start, from: selection };
+  } else {
+    // A click outside the selection clears it.
+    drag = { move: false, start };
+    setSelection(null);
+  }
 });
 
 $("stage").addEventListener("pointermove", (event) => {
   if (!drag) return;
   const now = point(event);
-  if (drag.move) {
-    selection = moveRect(drag.from, now.x - drag.start.x, now.y - drag.start.y,
-      size.width, size.height);
-    render();
-  } else {
-    selection = rectBetween(drag.start, now, size.width, size.height);
-    render();
-  }
+  setSelection(drag.move
+    ? moveRect(drag.from, now.x - drag.start.x, now.y - drag.start.y, size.width, size.height)
+    : rectBetween(drag.start, now, size.width, size.height));
 });
 
 const endDrag = () => {
-  if (!drag) return;
   drag = null;
-  setSelection(selection);
 };
 $("stage").addEventListener("pointerup", endDrag);
 $("stage").addEventListener("pointercancel", endDrag);
@@ -130,22 +129,25 @@ async function copy() {
   }
 }
 
+// Shows `blob` as the image, and keeps it, so that a reload shows it too.
+async function replace(blob) {
+  shot.blob = blob;
+  drag = null;
+  selection = null;
+  await show(blob);
+  render();
+  await putShot(shot);
+}
+
 async function crop() {
   if (!selection) return;
   const blob = await output();
   undo.push(shot.blob);
-  shot.blob = blob;
-  selection = null;
-  await show(blob);
-  render();
+  await replace(blob);
 }
 
 async function undoCrop() {
-  if (!undo.length) return;
-  shot.blob = undo.pop();
-  selection = null;
-  await show(shot.blob);
-  render();
+  if (undo.length) await replace(undo.pop());
 }
 
 $("save").addEventListener("click", () => save());
@@ -157,11 +159,14 @@ window.addEventListener("resize", render);
 
 document.addEventListener("keydown", (event) => {
   if (!shot) return;
-  const mod = event.ctrlKey || event.metaKey;
-  if (event.key === "Escape") setSelection(null);
-  else if (mod && event.key === "s") save();
-  else if (mod && event.key === "c") copy();
-  else if (mod && event.key === "z") undoCrop();
+  const mod = (event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey;
+  const key = event.key.toLowerCase();
+  if (key === "escape") {
+    drag = null;
+    setSelection(null);
+  } else if (mod && key === "s") save();
+  else if (mod && key === "c") copy();
+  else if (mod && key === "z") undoCrop();
   else return;
   event.preventDefault();
 });
@@ -174,7 +179,10 @@ async function init() {
     for (const b of document.querySelectorAll("button")) b.disabled = true;
     return;
   }
-  shot = { blob: stored.blob, name: stored.name };
+  shot = stored;
+  // The worker notes the editor's tab just after opening it, and this
+  // page may have read the shot before that; a crop must keep it.
+  shot.editorTabId = (await chrome.tabs.getCurrent())?.id ?? shot.editorTabId;
   document.title = `${stored.name} — filmil's screenshot`;
   if (stored.scaled < 1) {
     $("note").textContent = "The page was too large for one image at full size, so it was "

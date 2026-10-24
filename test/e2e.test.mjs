@@ -16,16 +16,22 @@ const extensionDir = process.env.E2E_EXTENSION_DIR
   ? resolve(process.env.E2E_EXTENSION_DIR)
   : fileURLToPath(new URL("../extension", import.meta.url));
 
-// The test page: a fixed red header over six bands of 700 pixels, each
-// its own color.
+// The test page: six bands of 700 pixels, each its own color, under a
+// fixed red header and over a fixed magenta footer. The third band starts
+// with an orange sticky bar, which sticks 100 pixels from the top.
 const HEADER = [255, 0, 0];
+const FOOTER = [255, 0, 255];
+const STICKY = [255, 128, 0];
 const BANDS = [[0, 0, 255], [0, 160, 0], [255, 200, 0], [128, 0, 128], [0, 200, 200], [90, 90, 90]];
 const BAND = 700;
 const hex = (c) => `#${c.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
 const TALL = `<!doctype html><title>tall</title>
 <style>body{margin:0} div{height:${BAND}px}
-header{position:fixed;top:0;left:0;right:0;height:40px;background:${hex(HEADER)}}</style>
-<header></header>${BANDS.map((c) => `<div style="background:${hex(c)}"></div>`).join("")}`;
+header{position:fixed;top:0;left:0;right:0;height:40px;background:${hex(HEADER)}}
+footer{position:fixed;bottom:0;left:0;right:0;height:30px;background:${hex(FOOTER)}}
+p{position:sticky;top:100px;height:50px;margin:0;background:${hex(STICKY)}}</style>
+<header></header><footer></footer>${BANDS.map((c, i) =>
+    `<div style="background:${hex(c)}">${i === 2 ? "<p></p>" : ""}</div>`).join("")}`;
 
 let browser, server, extension, base;
 
@@ -105,11 +111,12 @@ test("a screenshot of what is on screen", { timeout: 60_000 }, async () => {
   const page = await tallPage();
   const editor = await shoot(page, "visible");
   const view = await page.evaluate(() => [innerWidth, innerHeight]);
-  const shot = await sample(editor, [[10, 10], [10, 300], [10, 590]]);
+  const shot = await sample(editor, [[10, 10], [10, 300], [10, 560], [10, 590]]);
   assert.deepEqual([shot.width, shot.height], view);
   assertColor(shot.colors[0], HEADER, "header");
   assertColor(shot.colors[1], BANDS[0], "first band");
-  assertColor(shot.colors[2], BANDS[0], "first band, bottom");
+  assertColor(shot.colors[2], BANDS[0], "first band, lower");
+  assertColor(shot.colors[3], FOOTER, "footer");
   await editor.close();
   await page.close();
 });
@@ -123,7 +130,10 @@ test("a screenshot of the whole page", { timeout: 60_000 }, async () => {
   assert.equal(size[1], BAND * BANDS.length);
   const points = [[10, 10], [10, 620], [10, 1250]];
   for (let i = 0; i < BANDS.length; i++) points.push([400, i * BAND + BAND / 2]);
-  points.push([400, BAND * BANDS.length - 2]);
+  // The bottom, with the footer; the first screen's bottom, without it.
+  points.push([400, BAND * BANDS.length - 2], [400, 590]);
+  // The sticky bar, where the page puts it, and not 100 pixels lower.
+  points.push([400, 2 * BAND + 25], [400, 2 * BAND + 125]);
   const shot = await sample(editor, points);
   assert.deepEqual([shot.width, shot.height], size);
   assertColor(shot.colors[0], HEADER, "the header, at the top");
@@ -131,19 +141,22 @@ test("a screenshot of the whole page", { timeout: 60_000 }, async () => {
   assertColor(shot.colors[1], BANDS[0], "under the second screen's header");
   assertColor(shot.colors[2], BANDS[1], "under the third screen's header");
   for (let i = 0; i < BANDS.length; i++) assertColor(shot.colors[3 + i], BANDS[i], `band ${i}`);
-  assertColor(shot.colors.at(-1), BANDS.at(-1), "the bottom edge");
+  assertColor(shot.colors[9], FOOTER, "the footer, at the bottom");
+  assertColor(shot.colors[10], BANDS[0], "the first screen's bottom");
+  assertColor(shot.colors[11], STICKY, "the sticky bar");
+  assertColor(shot.colors[12], BANDS[2], "under the sticky bar");
   // The page is as it was.
   assert.equal(await page.evaluate(() => window.scrollY), 1000);
   // Chrome may leave an empty style="" where there was none.
   assert.deepEqual(await page.evaluate(() =>
-    [document.documentElement, document.querySelector("header")]
-      .map((e) => e.getAttribute("style") ?? "")), ["", ""]);
+    [document.documentElement, document.querySelector("header"), document.querySelector("footer")]
+      .map((e) => e.getAttribute("style") ?? "")), ["", "", ""]);
   assert.equal(await page.$eval("header", (h) => getComputedStyle(h).visibility), "visible");
   await editor.close();
   await page.close();
 });
 
-test("select, crop, and undo in the editor", { timeout: 60_000 }, async () => {
+test("select and crop in the editor; a reload keeps the crop", { timeout: 60_000 }, async () => {
   const page = await tallPage();
   const editor = await shoot(page, "visible");
   await editor.setViewport({ width: 1000, height: 800 });
@@ -173,6 +186,42 @@ test("select, crop, and undo in the editor", { timeout: 60_000 }, async () => {
   await editor.waitForFunction((w) => globalThis.screenshotEditor.size().width === w, {},
     selection.width);
   assert.equal(await editor.evaluate(() => globalThis.screenshotEditor.selection()), null);
+  // A reload shows the cropped image.
+  await editor.reload();
+  await editor.waitForFunction(() => globalThis.screenshotEditor?.size().width > 0);
+  assert.equal((await editor.evaluate(() => globalThis.screenshotEditor.size())).width,
+    selection.width);
+  await editor.close();
+  await page.close();
+});
+
+test("a click outside the selection clears it", { timeout: 60_000 }, async () => {
+  const page = await tallPage();
+  const editor = await shoot(page, "visible");
+  const box = await (await editor.$("#shot")).boundingBox();
+  await editor.mouse.move(box.x + 10, box.y + 10);
+  await editor.mouse.down();
+  await editor.mouse.move(box.x + 100, box.y + 100, { steps: 5 });
+  await editor.mouse.up();
+  assert.notEqual(await editor.evaluate(() => globalThis.screenshotEditor.selection()), null);
+  await editor.mouse.click(box.x + 300, box.y + 300);
+  assert.equal(await editor.evaluate(() => globalThis.screenshotEditor.selection()), null);
+  await editor.close();
+  await page.close();
+});
+
+test("undo takes back a crop", { timeout: 60_000 }, async () => {
+  const page = await tallPage();
+  const editor = await shoot(page, "visible");
+  const full = await editor.evaluate(() => globalThis.screenshotEditor.size());
+  const box = await (await editor.$("#shot")).boundingBox();
+  await editor.mouse.move(box.x + 10, box.y + 10);
+  await editor.mouse.down();
+  await editor.mouse.move(box.x + 100, box.y + 100, { steps: 5 });
+  await editor.mouse.up();
+  await editor.click("#crop");
+  await editor.waitForFunction((w) => globalThis.screenshotEditor.size().width !== w, {},
+    full.width);
   await editor.click("#undo");
   await editor.waitForFunction((w) => globalThis.screenshotEditor.size().width === w, {},
     full.width);
