@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "filmil's screenshot",
+  "version": "0.1.0",
+  "description": "Screenshots of what a tab shows, or of the whole page; select a part, save or copy it. No ads, no tracking, no network.",
+  "minimum_chrome_version": "120",
+  "permissions": ["activeTab", "scripting"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "filmil's screenshot",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "commands": {
+    "capture-visible": {
+      "description": "Screenshot of what the tab shows"
+    },
+    "capture-page": {
+      "description": "Screenshot of the whole page"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

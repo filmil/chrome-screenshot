@@ -1,0 +1,105 @@
+# Builds the extension with Bazel and publishes it as a GitHub release.
+#
+# Every day, if extension/ changed since the last release; or by hand,
+# from the Actions tab, with "force" to release even without changes.
+# The version is the UTC date, YYYY.M.D, with a fourth part if there is
+# already a release that day: Chrome needs up to four integers.
+name: release
+on:
+  schedule:
+    - cron: "17 14 * * *" # every day, 07:17 PDT / 06:17 PST
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Release even if extension/ is unchanged
+        type: boolean
+        default: false
+permissions:
+  contents: write
+concurrency:
+  group: release
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Anything to release?
+        id: changes
+        env:
+          FORCE: ${{ inputs.force }}
+        run: |
+          last="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
+          echo "last=$last" >> "$GITHUB_OUTPUT"
+          if [ -z "$last" ]; then
+            echo "no release yet"; echo "release=true" >> "$GITHUB_OUTPUT"
+          elif [ -n "$(git log --oneline "$last..HEAD" -- extension)" ]; then
+            echo "extension/ changed since $last"; echo "release=true" >> "$GITHUB_OUTPUT"
+          elif [ "$FORCE" = "true" ]; then
+            echo "no changes since $last, but forced"; echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no changes to extension/ since $last; nothing to release"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Version
+        if: steps.changes.outputs.release == 'true'
+        id: version
+        run: |
+          v="$(date -u +%Y.%-m.%-d)"
+          n=0; candidate="$v"
+          while git rev-parse -q --verify "refs/tags/v$candidate" >/dev/null; do
+            n=$((n + 1)); candidate="$v.$n"
+          done
+          echo "version=$candidate" >> "$GITHUB_OUTPUT"
+          echo "releasing $candidate"
+      # The runner's bazel is Bazelisk, which runs the version in
+      # .bazelversion.
+      - name: Test and package
+        if: steps.changes.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          bazel test //...
+          bazel build //:zip --//:version="$VERSION"
+          mkdir -p dist
+          cp "bazel-bin/screenshot-$VERSION.zip" dist/
+          (cd dist && sha256sum "screenshot-$VERSION.zip" > "screenshot-$VERSION.zip.sha256")
+      - uses: actions/setup-node@v4
+        if: steps.changes.outputs.release == 'true'
+        with:
+          node-version: 22
+          cache: npm
+      # The end-to-end test loads the zip it is about to publish.
+      - name: End-to-end test of the zip in Chrome
+        if: steps.changes.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          npm ci
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          rm -rf "$RUNNER_TEMP/unzipped"
+          unzip -q "dist/screenshot-$VERSION.zip" -d "$RUNNER_TEMP/unzipped"
+          E2E_EXTENSION_DIR="$RUNNER_TEMP/unzipped" npm run test:e2e
+      - name: Publish
+        if: steps.changes.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          LAST: ${{ steps.changes.outputs.last }}
+        run: |
+          {
+            echo "Install: download screenshot-$VERSION.zip, unzip it, open"
+            echo "chrome://extensions, turn on Developer mode, and choose"
+            echo "Load unpacked on the unzipped folder."
+            echo
+            echo "SHA-256: \`$(cut -d' ' -f1 "dist/screenshot-$VERSION.zip.sha256")\`"
+            echo
+            if [ -n "$LAST" ]; then
+              echo "Changes since $LAST:"
+              git log --format='- %s (%h)' "$LAST..HEAD"
+            fi
+          } > notes.md
+          gh release create "v$VERSION" dist/* \
+            --target "$GITHUB_SHA" --title "filmil's screenshot $VERSION" --notes-file notes.md

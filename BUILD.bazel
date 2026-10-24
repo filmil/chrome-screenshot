@@ -1,0 +1,80 @@
+# SPDX-License-Identifier: Apache-2.0
+#   bazel build //:zip --//:version=2026.10.23
+# builds bazel-bin/screenshot-2026.10.23.zip, the extension as the release
+# publishes it. The same source and version make the same zip, byte for
+# byte: the files are in a fixed order with fixed times.
+load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:zip.bzl", "pkg_zip")
+load("//bazel:defs.bzl", "extension_manifest", "node_test", "package_variables")
+load("//bazel:defs_test.bzl", "version_test_suite")
+
+# The release version: 1 to 4 integers, each 0 to 65535. Left unset, it
+# is the source manifest's version.
+string_flag(
+    name = "version",
+    build_setting_default = "0.1.0",
+    visibility = ["//visibility:public"],
+)
+
+extension_manifest(
+    name = "manifest",
+    src = "//extension:manifest.json",
+)
+
+package_variables(name = "variables")
+
+pkg_files(
+    name = "files",
+    srcs = ["//extension:srcs"],
+    strip_prefix = strip_prefix.from_root("extension"),
+)
+
+pkg_files(
+    name = "manifest_file",
+    srcs = [":manifest"],
+    strip_prefix = strip_prefix.from_pkg("manifest"),
+)
+
+pkg_zip(
+    name = "zip",
+    srcs = [
+        ":files",
+        ":manifest_file",
+    ],
+    package_file_name = "screenshot-{version}.zip",
+    package_variables = ":variables",
+)
+
+node_test(
+    name = "unit_test",
+    srcs = ["test/lib.test.mjs"],
+    data = ["//extension:srcs"],
+)
+
+node_test(
+    name = "manifest_test",
+    srcs = ["test/manifest.test.mjs"],
+    data = [
+        "//extension:manifest.json",
+        "//extension:srcs",
+    ],
+)
+
+# The manifest the zip holds: the source one, with the version set.
+node_test(
+    name = "built_manifest_test",
+    srcs = ["test/built_manifest.test.mjs"],
+    data = [
+        ":manifest",
+        "//extension:manifest.json",
+    ],
+)
+
+version_test_suite(name = "version_test")
+
+node_test(
+    name = "webstore_test",
+    srcs = ["test/webstore.test.mjs"],
+    data = ["scripts/webstore.mjs"],
+)
