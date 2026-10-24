@@ -18,12 +18,14 @@ test("permissions are only activeTab and scripting", () => {
 });
 
 test("no code reaches the network or evaluates strings", () => {
-  const code = readdirSync(dir).filter((f) => /\.(js|html)$/.test(f))
+  // A stylesheet can load a URL too, with @import or url(...).
+  const code = readdirSync(dir).filter((f) => /\.(js|html|css)$/.test(f))
     .map((f) => [f, readFileSync(new URL(f, dir), "utf8")]);
   assert.ok(code.length >= 7);
   for (const [file, text] of code) {
     for (const bad of [/\bfetch\s*\(/, /XMLHttpRequest/, /WebSocket/, /EventSource/,
-      /sendBeacon/, /\beval\s*\(/, /new Function\b/, /https?:\/\//, /importScripts/]) {
+      /sendBeacon/, /\beval\s*\(/, /new Function\b/, /https?:\/\//, /importScripts/,
+      /@import/, /url\(\s*["']?(?!data:)[a-z]*:?\/\//i, /["'=(]\s*\/\/[\w-]+\.[\w.-]+/]) {
       assert.doesNotMatch(text, bad, `${file} matches ${bad}`);
     }
   }
