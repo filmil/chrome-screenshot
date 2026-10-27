@@ -18,14 +18,20 @@ test("permissions are only activeTab and scripting", () => {
 });
 
 test("no code reaches the network or evaluates strings", () => {
-  const code = readdirSync(dir).filter((f) => /\.(js|html)$/.test(f))
+  // Every file Chrome could load from the extension, in subfolders too.
+  const files = readdirSync(dir, { recursive: true })
+    .filter((f) => /\.(m?js|html|css|svg)$/i.test(f))
     .map((f) => [f, readFileSync(new URL(f, dir), "utf8")]);
-  assert.ok(code.length >= 7);
-  for (const [file, text] of code) {
-    for (const bad of [/\bfetch\s*\(/, /XMLHttpRequest/, /WebSocket/, /EventSource/,
-      /sendBeacon/, /\beval\s*\(/, /new Function\b/, /https?:\/\//, /importScripts/]) {
-      assert.doesNotMatch(text, bad, `${file} matches ${bad}`);
-    }
+  assert.ok(files.some(([f]) => /\.js$/.test(f)) && files.some(([f]) => /\.css$/.test(f)));
+  for (const [file, text] of files) {
+    const bad = [/\bfetch\s*\(/, /XMLHttpRequest/, /WebSocket/, /EventSource/,
+      /sendBeacon/, /\beval\s*\(/, /new Function\b/, /https?:\/\//i, /importScripts/,
+      // A protocol-relative address in a string: "//host/x".
+      /["'`]\s*\/\/(?![\s/])/];
+    // A stylesheet can load a URL with @import or url(...); only data:
+    // URLs are allowed.
+    if (/\.(css|html|svg)$/i.test(file)) bad.push(/@import/i, /url\s*\((?!\s*["']?\s*data:)/i);
+    for (const pattern of bad) assert.doesNotMatch(text, pattern, `${file} matches ${pattern}`);
   }
 });
 
