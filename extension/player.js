@@ -7,6 +7,7 @@ const $ = (id) => document.getElementById(id);
 const video = $("video");
 
 let shot = null; // as stored: { id, kind: "video", blob, name, duration, ... }
+let ready = false; // the video is loaded, its length known, and at its start
 
 function report(text, isError = false) {
   $("error").textContent = isError ? text : "";
@@ -35,12 +36,16 @@ function show(blob) {
       video.ondurationchange = () => {
         if (!Number.isFinite(video.duration)) return;
         video.ondurationchange = null;
+        video.onseeked = () => {
+          video.onseeked = null;
+          resolve();
+        };
         video.currentTime = 0;
-        resolve();
       };
       video.currentTime = Number.MAX_SAFE_INTEGER;
     };
     video.src = URL.createObjectURL(blob);
+    window.addEventListener("pagehide", () => URL.revokeObjectURL(video.src));
   });
 }
 
@@ -63,6 +68,7 @@ async function init() {
   shot = stored;
   document.title = `${stored.name} — filmil's screenshot`;
   await show(shot.blob);
+  ready = true;
   const mb = (shot.blob.size / 1e6).toFixed(1);
   report(`${video.videoWidth} × ${video.videoHeight} px, ${durationText(shot.duration)}, ${mb} MB.`);
 }
@@ -71,7 +77,7 @@ init().catch((error) => report(error.message, true));
 
 // For the end-to-end test.
 globalThis.screenshotPlayer = {
-  ready: () => shot !== null && video.videoWidth > 0,
+  ready: () => ready,
   size: () => ({ width: video.videoWidth, height: video.videoHeight }),
   duration: () => video.duration,
   type: () => shot?.blob.type,

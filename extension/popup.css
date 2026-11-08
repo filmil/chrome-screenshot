@@ -43,3 +43,4 @@ button:disabled { opacity: 0.5; cursor: default; }
 #error:empty { display: none; }
 button#record, button#stop { background: var(--error); border-color: var(--error); color: var(--bg); }
 [hidden] { display: none !important; }
+label { display: flex; align-items: center; gap: 6px; }

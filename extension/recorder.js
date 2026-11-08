@@ -3,71 +3,98 @@
 // cannot use MediaRecorder. The worker opens this page for one recording
 // and closes it after. The video goes to the extension's own storage, as a
 // screenshot does, and the worker opens it in a tab.
-import { fileName, videoType } from "./lib.js";
+import { MAX_VIDEO_MS, even, fileName, videoType } from "./lib.js";
 import { putShot } from "./store.js";
 
-let recording = null; // { recorder, stream, audio, chunks, started, tabId, done }
+// The recording, from start until its video is kept or lost:
+// { recorder, stream, audio, chunks, started, tabId, url, type, extension,
+//   done, stopping, timer }.
+let recording = null;
 
-async function start({ streamId, tabId, url, width, height }) {
+async function start({ streamId, tabId, url, width, height, sound }) {
   if (recording) throw new Error("A video is already being recorded.");
   const source = { chromeMediaSource: "tab", chromeMediaSourceId: streamId };
   const stream = await navigator.mediaDevices.getUserMedia({
-    audio: { mandatory: source },
+    audio: sound ? { mandatory: source } : false,
     video: {
       mandatory: {
         ...source,
         // The tab's own size in device pixels, so the video is as sharp as
-        // the screen.
-        maxWidth: width,
-        maxHeight: height,
+        // the screen. Video encoders need even sizes.
+        maxWidth: even(width),
+        maxHeight: even(height),
         maxFrameRate: 30,
       },
     },
   });
-  // Capturing a tab mutes it; play its sound on, so the user still hears it.
-  const audio = new AudioContext();
-  audio.createMediaStreamSource(stream).connect(audio.destination);
-  const { type, extension } = videoType((t) => MediaRecorder.isTypeSupported(t));
-  const recorder = new MediaRecorder(stream, { mimeType: type });
-  const chunks = [];
-  recorder.ondataavailable = (event) => {
-    if (event.data.size) chunks.push(event.data);
-  };
-  let finished;
-  const done = new Promise((resolve) => {
-    finished = resolve;
-  });
-  recorder.onstop = () => finished();
-  recording = { recorder, stream, audio, chunks, started: Date.now(), tabId, url, extension, type, done };
+  let audio = null;
+  try {
+    // Capturing a tab's sound mutes the tab; play it on, so the user
+    // still hears it.
+    if (stream.getAudioTracks().length) {
+      audio = new AudioContext();
+      audio.createMediaStreamSource(stream).connect(audio.destination);
+    }
+    const { type, extension } = videoType((t) => MediaRecorder.isTypeSupported(t));
+    const recorder = new MediaRecorder(stream, { mimeType: type });
+    const chunks = [];
+    recorder.ondataavailable = (event) => {
+      if (event.data.size) chunks.push(event.data);
+    };
+    let finished;
+    const done = new Promise((resolve) => {
+      finished = resolve;
+    });
+    recorder.onstop = () => finished();
+    recorder.onerror = () => finish();
+    recorder.start(1000);
+    recording = {
+      recorder, stream, audio, chunks, started: Date.now(), tabId, url, type, extension, done,
+      stopping: false,
+      // Recordings stop by themselves at the time limit.
+      timer: setTimeout(() => finish(), MAX_VIDEO_MS),
+    };
+  } catch (error) {
+    for (const track of stream.getTracks()) track.stop();
+    await audio?.close().catch(() => {});
+    throw error;
+  }
   // The tab closing, or going where Chrome does not let it be captured,
   // ends the stream; the recording ends with it.
   for (const track of stream.getTracks()) track.onended = () => finish();
-  recorder.start(1000);
   return { started: recording.started };
 }
 
-// Ends the recording, keeps the video, and tells the worker its id.
+// Ends the recording, keeps the video, and tells the worker its id. The
+// recording stays in `recording`, marked as stopping, until then, so that
+// nothing can start or stop another one meanwhile.
 async function stop() {
   const r = recording;
-  if (!r) return null;
-  if (r.recorder.state !== "inactive") r.recorder.stop();
-  await r.done;
-  if (recording !== r) return null; // the other caller kept it
-  recording = null;
-  for (const track of r.stream.getTracks()) track.stop();
-  await r.audio.close().catch(() => {});
-  const blob = new Blob(r.chunks, { type: r.type.split(";")[0] });
-  const video = {
-    id: crypto.randomUUID(),
-    kind: "video",
-    blob,
-    created: r.started,
-    name: fileName(new Date(r.started), r.url, "video", r.extension),
-    duration: Date.now() - r.started,
-  };
-  await putShot(video);
-  await chrome.runtime.sendMessage({ target: "worker", type: "recorded", id: video.id, tabId: r.tabId });
-  return { id: video.id };
+  if (!r || r.stopping) return;
+  r.stopping = true;
+  clearTimeout(r.timer);
+  try {
+    if (r.recorder.state !== "inactive") r.recorder.stop();
+    await r.done;
+    for (const track of r.stream.getTracks()) track.stop();
+    await r.audio?.close().catch(() => {});
+    const video = {
+      id: crypto.randomUUID(),
+      kind: "video",
+      blob: new Blob(r.chunks, { type: r.type.split(";")[0] }),
+      // When it was kept: the worker deletes what no tab shows a minute
+      // after this.
+      created: Date.now(),
+      name: fileName(new Date(r.started), r.url, "video", r.extension),
+      duration: Date.now() - r.started,
+    };
+    await putShot(video);
+    const reply = await chrome.runtime.sendMessage(
+      { target: "worker", type: "recorded", id: video.id, tabId: r.tabId });
+    if (!reply?.ok) throw new Error(reply?.error ?? "the extension did not open it");
+  } finally {
+    recording = null;
+  }
 }
 
 // Stops the recording, and tells the worker if the video could not be kept.
@@ -89,7 +116,10 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       finish();
       return null;
     },
-    status: async () => (recording ? { tabId: recording.tabId, started: recording.started } : null),
+    status: async () => (recording
+      ? { tabId: recording.tabId, started: recording.started, stopping: recording.stopping,
+        limit: MAX_VIDEO_MS }
+      : null),
   }[message.type];
   if (!work) return false;
   work().then(

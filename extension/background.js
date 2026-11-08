@@ -43,6 +43,12 @@ async function clearIcon(tabId) {
 // the whole page ("page"). Opens the editor with it.
 async function capture(tabId, mode) {
   if (busy) throw new Error("A screenshot is already being taken.");
+  // A screenshot of the whole page would scroll the video, and either kind
+  // would take the REC off the icon.
+  if ((await recordingStatus())?.tabId === tabId) {
+    throw new Error("This tab is being recorded. Stop the video first.");
+  }
+  if (busy) throw new Error("A screenshot is already being taken.");
   busy = true;
   try {
     await clearIcon(tabId);
@@ -222,18 +228,23 @@ async function toRecorder(message) {
   return reply.result;
 }
 
-// { tabId, started } of the video being recorded, or null.
+// { tabId, started, stopping, limit } of the video being recorded, or
+// null. `stopping` is true while the recorder keeps the video.
 async function recordingStatus() {
   return (await recorderOpen()) ? toRecorder({ type: "status" }) : null;
 }
 
-async function startRecording(tabId) {
-  if (busy) throw new Error("A screenshot is being taken.");
-  if (await recordingStatus()) throw new Error("A video is already being recorded.");
-  // Open, but not recording: it is still keeping the last video.
-  if (await recorderOpen()) throw new Error("The last video is still being saved. Try again in a moment.");
+// Records tab `tabId`, with its sound if `sound`.
+async function startRecording(tabId, sound) {
+  if (busy) throw new Error("A screenshot or a video is being started.");
   busy = true;
+  let opened = false;
   try {
+    const status = await recordingStatus();
+    if (status?.stopping) throw new Error("The last video is still being saved. Try again in a moment.");
+    if (status) throw new Error("A video is already being recorded.");
+    // Open, but not recording: it is closing after the last video.
+    if (await recorderOpen()) throw new Error("The last video is still being saved. Try again in a moment.");
     await clearIcon(tabId);
     await prune();
     const tab = await chrome.tabs.get(tabId);
@@ -245,28 +256,30 @@ async function startRecording(tabId) {
     const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId });
     await chrome.offscreen.createDocument({
       url: RECORDER,
-      reasons: ["USER_MEDIA"],
+      // It plays the tab's sound on while it records it.
+      reasons: sound ? ["USER_MEDIA", "AUDIO_PLAYBACK"] : ["USER_MEDIA"],
       justification: "Records a video of the tab the user asked to record.",
     });
-    await toRecorder({ type: "start", streamId, tabId, url: tab.url, ...size });
-    await chrome.action.setBadgeBackgroundColor({ tabId, color: "#c5221f" });
-    await chrome.action.setBadgeText({ tabId, text: "REC" });
-    await chrome.action.setTitle({ tabId, title: "Recording a video. Click here to stop it." });
+    opened = true;
+    await toRecorder({ type: "start", streamId, tabId, url: tab.url, sound, ...size });
   } catch (error) {
-    if (!(await recordingStatus().catch(() => null))) {
-      await chrome.offscreen.closeDocument().catch(() => {});
-    }
+    if (opened) await chrome.offscreen.closeDocument().catch(() => {});
     throw new Error(explainError(error));
   } finally {
     busy = false;
   }
+  await chrome.action.setBadgeBackgroundColor({ tabId, color: "#c5221f" }).catch(() => {});
+  await chrome.action.setBadgeText({ tabId, text: "REC" }).catch(() => {});
+  await chrome.action.setTitle({ tabId, title: "Recording a video. Click here to stop it." })
+    .catch(() => {});
 }
 
 // Asks the recorder to stop. It answers at once, and sends "recorded"
 // when the video is kept.
 async function stopRecording() {
-  if (!(await recordingStatus())) throw new Error("No video is being recorded.");
-  await toRecorder({ type: "stop" });
+  const status = await recordingStatus();
+  if (!status) throw new Error("No video is being recorded.");
+  if (!status.stopping) await toRecorder({ type: "stop" });
 }
 
 // Opens the video `id` in the player, beside tab `tabId` if it is still
@@ -317,7 +330,7 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
     if (command === "record-video") {
       // The same keys start a video and stop it.
       if (await recordingStatus()) await stopRecording();
-      else await startRecording(tabId);
+      else await startRecording(tabId, false);
     } else {
       await capture(tabId, modes[command]);
     }
@@ -334,7 +347,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
   if (sender.id !== chrome.runtime.id || message.target === "recorder") return false;
   const work = {
     capture: () => capture(message.tabId, message.mode === "page" ? "page" : "visible"),
-    record: () => startRecording(message.tabId),
+    record: () => startRecording(message.tabId, message.sound === true),
     stop: () => stopRecording(),
     status: () => recordingStatus(),
     recorded: () => recorded(message.id, message.tabId),

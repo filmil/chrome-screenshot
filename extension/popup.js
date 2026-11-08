@@ -19,14 +19,14 @@ const statusText = {
 
 // Sends `type` ("capture", "record" or "stop") for this tab, and closes
 // the popup when it worked.
-async function run(type, mode) {
+async function run(type, mode, extra = {}) {
   $("error").textContent = "";
   for (const id of buttons) $(id).disabled = true;
   $("status").textContent = statusText[mode ?? type];
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab) throw new Error("No tab to capture.");
-    await ask({ type, mode, tabId: tab.id });
+    await ask({ type, mode, tabId: tab.id, ...extra });
     window.close();
   } catch (e) {
     $("status").textContent = "";
@@ -37,7 +37,8 @@ async function run(type, mode) {
 
 $("visible").addEventListener("click", () => run("capture", "visible"));
 $("page").addEventListener("click", () => run("capture", "page"));
-$("record").addEventListener("click", () => run("record"));
+// Sound is off unless the user ticks the box, each time.
+$("record").addEventListener("click", () => run("record", undefined, { sound: $("sound").checked }));
 $("stop").addEventListener("click", () => run("stop"));
 
 // While a video is recorded, the popup offers only to stop it.
@@ -46,8 +47,14 @@ async function init() {
   if (!recording) return;
   $("idle").hidden = true;
   $("recording").hidden = false;
+  if (recording.stopping) {
+    $("elapsed").textContent = "Saving the video…";
+    $("stop").disabled = true;
+    return;
+  }
   const tick = () => {
-    $("elapsed").textContent = `Recording a video: ${durationText(Date.now() - recording.started)}.`;
+    $("elapsed").textContent = `Recording a video: ${durationText(Date.now() - recording.started)}`
+      + ` of at most ${durationText(recording.limit)}.`;
   };
   tick();
   setInterval(tick, 1000);

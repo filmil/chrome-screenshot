@@ -6,8 +6,9 @@
 A Chrome extension that takes a screenshot of a tab: of what the tab
 shows, or of the whole page, top to bottom. The screenshot opens in a
 new tab, where you can select part of it, crop it, and save or copy it.
-It also records a video of a tab, with its sound, which opens in a new
-tab where you can play it and save it.
+It also records a video of a tab, up to 5 minutes long and with the
+tab's sound if you ask for it. The video opens in a new tab, where you
+can play it and save it.
 It shows no ads, tracks nothing, and sends nothing anywhere. The name
 says who made it: it is filmil's, from this repository, and not one of
 the many screenshot extensions with a generic name.
@@ -27,7 +28,9 @@ when you ask it for a screenshot or a video of that tab.
   given it. `offscreen` lets it open a hidden page of its own that does
   the recording, since the extension's background worker cannot. It has
   no host permissions and no content scripts, so it cannot see any other
-  tab, or any page you have not asked it to capture.
+  tab, or any page you have not asked it to capture. Chrome may ask you
+  to accept `tabCapture` when you install the extension, or when it
+  updates from a version without videos.
 - **No network.** It makes no requests and loads no remote code. A test
   fails if any of its files names `fetch`, `XMLHttpRequest`, `WebSocket`,
   `eval`, or a URL, or if the manifest asks for more.
@@ -61,18 +64,19 @@ drag the selection to move it, and press **Esc** to clear it.
   (Ctrl+Z) takes that back.
 
 To record a video, choose **Record a video**. The icon shows a red
-**REC** while it records. The tab's sound is recorded too, and you
-still hear it. To stop, click the icon again and choose **Stop
-recording**; the popup shows how long it has been recording. The
-recording also stops when you close the tab. The video opens in a new
-tab, where you can play it, and **Save** (Ctrl+S) saves it in your
-downloads folder: as an MP4 file, or as WebM where Chrome cannot record
-MP4.
+**REC** while it records. Sound is not recorded unless you tick
+**Record sound** first; you still hear the tab either way. To stop,
+click the icon again and choose **Stop recording**; the popup shows how
+long it has been recording. The recording also stops when you close the
+tab, and by itself after 5 minutes. While a tab is being recorded, the
+extension takes no screenshots of it. The video opens in a new tab,
+where you can play it, and **Save** (Ctrl+S) saves it in your downloads
+folder: as an MP4 file, or as WebM where Chrome cannot record MP4.
 
 To take a screenshot or start a video from the keyboard, set the
 shortcuts at `chrome://extensions/shortcuts`. They have no keys until
-you choose some. The video shortcut starts a recording, and the same
-keys stop it. If a shortcut cannot do its work, the icon shows a red
+you choose some. The video shortcut starts a recording, without sound,
+and the same keys stop it. If a shortcut cannot do its work, the icon shows a red
 **!**, and the reason when you point at it.
 
 Limits:
@@ -87,9 +91,10 @@ Limits:
   fit, and the editor says so.
 - Pages that scroll inside a box of their own, as some web apps do,
   rather than as a whole, come out as one screen.
-- One video at a time. It records the tab at its size on the screen, at
-  up to 30 frames a second, and keeps the whole video in memory until
-  you stop, so a long recording of a busy page uses a lot of memory.
+- One video at a time, of at most 5 minutes. It records the tab at its
+  size on the screen, at up to 30 frames a second. Chrome sends a frame
+  only when the page changes, so a video of a page that does not move
+  is short and small.
 
 ## Install
 
@@ -129,14 +134,21 @@ Until the setup below is done, the workflow skips. The setup is one time:
 2. **Upload the first version by hand.** In the
    [Developer Dashboard](https://chrome.google.com/webstore/devconsole),
    add a new item with the zip from the newest release. Fill in the
-   **Store listing** and **Privacy** tabs, and submit it. The privacy
-   tab asks for these:
-   - Single purpose: take a screenshot or a video of the current tab,
-     and let the user crop, save or copy it.
+   **Store listing** and **Privacy** tabs, and submit it. For the
+   listing's description:
+   "Takes a screenshot of what a tab shows, or of the whole page, and
+   lets you select part of it, crop it, and save or copy it. Records a
+   video of a tab, up to 5 minutes long; recording the tab's sound is
+   optional, and off unless you turn it on. No ads, no tracking, no
+   network." The privacy tab asks for these:
+   - Single purpose: take a screenshot or a video of the current tab.
+     The user can crop, save or copy a screenshot, and play or save a
+     video.
    - `activeTab`: captures the tab the user asked for a screenshot or
      a video of.
    - `scripting`: scrolls that tab, for a screenshot of the whole page.
-   - `tabCapture`: records that tab, when the user asks for a video.
+   - `tabCapture`: records that tab, and its sound if the user ticks
+     "Record sound", when the user asks for a video.
    - `offscreen`: opens the extension's hidden page that records the
      video, because a service worker cannot record.
    - Remote code: none. Data collected: none.
@@ -185,7 +197,9 @@ takes both kinds of screenshot, and checks their size and the colors at
 known places, including where fixed headers, fixed footers and sticky
 bars end up; then it selects, crops, reloads and undoes in the editor.
 It also records a two-second video from the popup, stops it there, and
-checks the video's size, length, file name and the colors of a frame. On Ubuntu
+checks the video's size, length, file name and the colors of a frame. It
+records with sound, reloads the player, ends a recording by closing its
+tab, and checks that closing the player deletes the video. On Ubuntu
 23.10 and later, Chrome's sandbox cannot start without user namespaces;
 run it with `E2E_NO_SANDBOX=1`, or allow them with
 `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`. It loads

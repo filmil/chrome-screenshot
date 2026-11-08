@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "filmil's screenshot",
   "version": "0.1.0",
-  "description": "Screenshots of a tab or the whole page, and videos of a tab. Select, save or copy. No ads, no tracking, no network.",
+  "description": "Screenshots of a tab or the whole page, and videos of a tab, with sound if you want. No ads, no tracking, no network.",
   "minimum_chrome_version": "120",
   "permissions": ["activeTab", "scripting", "tabCapture", "offscreen"],
   "background": {

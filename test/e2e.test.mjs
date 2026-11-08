@@ -260,38 +260,57 @@ test("a page Chrome protects gives a clear error", { timeout: 60_000 }, async ()
   await page.close();
 });
 
-// Records `page` for `ms` from the popup, stops from the popup, and
-// returns the player.
-async function record(page, ms) {
-  let popup = await openPopup(page);
+// Starts recording `page` from the popup, with sound if `sound`.
+async function startRecording(page, sound = false) {
+  const popup = await openPopup(page);
+  // Sound is off until the user ticks it.
+  assert.equal(await popup.$eval("#sound", (e) => e.checked), false);
+  if (sound) await popup.click("#sound");
   await popup.click("#record");
   const started = popup.waitForFunction(() => document.getElementById("error").textContent, { timeout: 0 })
     .then(async (h) => { throw new Error(`the popup says: ${await h.jsonValue()}`); }, () => {});
   await Promise.race([new Promise((r) => popup.once("close", r)), started]);
-  await new Promise((r) => setTimeout(r, ms));
-  popup = await openPopup(page);
-  // While it records, the popup offers only Stop.
-  await popup.waitForSelector("#stop", { visible: true });
-  assert.equal(await popup.$eval("#idle", (e) => e.hidden), true);
+}
+
+// Waits for the player that a recording opens, and for its video.
+async function playerOf(stopping) {
   const seen = new Set((await browser.pages()).map((p) => p.target()));
   const playerOpened = browser.waitForTarget(
     (t) => t.url().includes("/player.html?id=") && !seen.has(t), { timeout: 30_000 });
-  await popup.click("#stop");
+  await stopping();
   const player = await (await playerOpened).asPage();
   await player.waitForFunction(() => globalThis.screenshotPlayer?.ready(), { timeout: 30_000 });
   return player;
 }
 
+// Records `page` for `ms` from the popup, stops from the popup, and
+// returns the player.
+async function record(page, ms, sound = false) {
+  await startRecording(page, sound);
+  await new Promise((r) => setTimeout(r, ms));
+  const popup = await openPopup(page);
+  // While it records, the popup offers only Stop.
+  await popup.waitForSelector("#stop", { visible: true });
+  assert.equal(await popup.$eval("#idle", (e) => e.hidden), true);
+  assert.match(await popup.$eval("#elapsed", (e) => e.textContent), /of at most 5:00/);
+  return playerOf(() => popup.click("#stop"));
+}
+
+// What the player shows.
+const playerState = (player) => player.evaluate(() => ({
+  size: globalThis.screenshotPlayer.size(),
+  duration: globalThis.screenshotPlayer.duration(),
+  type: globalThis.screenshotPlayer.type(),
+  name: globalThis.screenshotPlayer.name(),
+}));
+
 test("a video of the tab", { timeout: 90_000 }, async () => {
   const page = await tallPage();
   const player = await record(page, 2_000);
-  const view = await page.evaluate(() => [innerWidth, innerHeight]);
-  const got = await player.evaluate(() => ({
-    size: globalThis.screenshotPlayer.size(),
-    duration: globalThis.screenshotPlayer.duration(),
-    type: globalThis.screenshotPlayer.type(),
-    name: globalThis.screenshotPlayer.name(),
-  }));
+  // In device pixels, and even.
+  const view = await page.evaluate(() =>
+    [innerWidth, innerHeight].map((n) => 2 * Math.floor((n * devicePixelRatio) / 2)));
+  const got = await playerState(player);
   assert.deepEqual([got.size.width, got.size.height], view);
   assert.ok(got.duration >= 1 && got.duration < 10, `duration ${got.duration}`);
   assert.match(got.type, /^video\/(mp4|webm)$/);
@@ -314,6 +333,39 @@ test("a video of the tab", { timeout: 90_000 }, async () => {
   assert.ok(near(colors[1], BANDS[0]), `first band: ${colors[1]}`);
   await player.close();
   await page.close();
+});
+
+test("a video with sound", { timeout: 90_000 }, async () => {
+  const page = await tallPage();
+  const player = await record(page, 1_000, true);
+  const got = await playerState(player);
+  assert.ok(got.duration >= 0.5, `duration ${got.duration}`);
+  // A reload keeps the video.
+  await player.reload();
+  await player.waitForFunction(() => globalThis.screenshotPlayer?.ready(), { timeout: 30_000 });
+  assert.equal((await playerState(player)).name, got.name);
+  await player.close();
+  await page.close();
+});
+
+test("closing the recorded tab ends the video and opens it", { timeout: 90_000 }, async () => {
+  const page = await tallPage();
+  // Chrome sends a tab's frames only when it changes, and a video that a
+  // closed tab ended lasts until its last frame; so the page changes.
+  await page.evaluate(() => {
+    const band = document.querySelector("div");
+    let on = false;
+    setInterval(() => {
+      on = !on;
+      band.style.background = on ? "#0000f0" : "#0000ff";
+    }, 50);
+  });
+  await startRecording(page);
+  await new Promise((r) => setTimeout(r, 1_000));
+  const player = await playerOf(() => page.close());
+  const got = await playerState(player);
+  assert.ok(got.duration >= 0.5, `duration ${got.duration}, ${got.size.width}x${got.size.height}`);
+  await player.close();
 });
 
 test("closing the player forgets the video", { timeout: 90_000 }, async () => {

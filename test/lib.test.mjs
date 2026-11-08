@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   MAX_AREA, MAX_SIDE, VIDEO_TYPES, dataUrlToBlob, durationText, explainError, fileName, fitScale,
-  moveRect, planTiles, progressText, rectBetween, videoType,
+  even, moveRect, planTiles, progressText, rectBetween, videoType,
 } from "../extension/lib.js";
 
 test("a page that fits the viewport is one tile", () => {
@@ -117,4 +117,10 @@ test("durations read as minutes and seconds", () => {
   assert.equal(durationText(0), "0:00");
   assert.equal(durationText(65_400), "1:05");
   assert.equal(durationText(3_723_000), "1:02:03");
+});
+
+test("video sizes are even", () => {
+  assert.equal(even(801), 800);
+  assert.equal(even(800), 800);
+  assert.equal(even(1), 2);
 });

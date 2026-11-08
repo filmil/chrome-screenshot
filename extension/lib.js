@@ -99,8 +99,9 @@ export function explainError(error) {
 
 // The formats a video is recorded in, best first: MP4 plays almost
 // everywhere; WebM is what every Chrome can record.
+// H.264 level 5.1 (avc1.640033) covers sizes up to 4096 x 2304.
 export const VIDEO_TYPES = [
-  "video/mp4;codecs=avc1.640028,mp4a.40.2",
+  "video/mp4;codecs=avc1.640033,mp4a.40.2",
   "video/mp4",
   "video/webm;codecs=vp9,opus",
   "video/webm",
@@ -122,4 +123,13 @@ export function durationText(ms) {
   const m = Math.floor((total % 3600) / 60);
   const sec = p(total % 60);
   return h ? `${h}:${p(m)}:${sec}` : `${m}:${sec}`;
+}
+
+// A recording stops by itself after 5 minutes.
+export const MAX_VIDEO_MS = 5 * 60_000;
+
+// `n`, rounded down to an even number, and at least 2: video encoders
+// need even sizes.
+export function even(n) {
+  return Math.max(2, 2 * Math.floor(n / 2));
 }
