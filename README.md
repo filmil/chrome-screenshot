@@ -6,31 +6,36 @@
 A Chrome extension that takes a screenshot of a tab: of what the tab
 shows, or of the whole page, top to bottom. The screenshot opens in a
 new tab, where you can select part of it, crop it, and save or copy it.
+It also records a video of a tab, with its sound, which opens in a new
+tab where you can play it and save it.
 It shows no ads, tracks nothing, and sends nothing anywhere. The name
 says who made it: it is filmil's, from this repository, and not one of
 the many screenshot extensions with a generic name.
 
 Screenshot extensions often ask to "read and change all your data on all
 websites", and keep that access all the time. This one sees a tab only
-when you ask it for a screenshot of that tab.
+when you ask it for a screenshot or a video of that tab.
 
 ## What it can and cannot do
 
-- **Permissions: `activeTab` and `scripting`, nothing else.** `activeTab`
-  gives the extension the current tab when you click its icon or press
-  one of its shortcuts, and only until that tab goes to another page.
-  `scripting` lets it scroll that tab, for a screenshot of the whole page.
-  It has no host permissions and no content scripts, so it cannot see
-  any other tab, or any page you have not asked it to capture. Chrome
-  shows no permission warning when you install it.
+- **Permissions: `activeTab`, `scripting`, `tabCapture` and `offscreen`,
+  nothing else.** `activeTab` gives the extension the current tab when
+  you click its icon or press one of its shortcuts, and only until that
+  tab goes to another page. `scripting` lets it scroll that tab, for a
+  screenshot of the whole page. `tabCapture` lets it record that tab, and
+  only that tab: Chrome refuses to record a tab that `activeTab` has not
+  given it. `offscreen` lets it open a hidden page of its own that does
+  the recording, since the extension's background worker cannot. It has
+  no host permissions and no content scripts, so it cannot see any other
+  tab, or any page you have not asked it to capture.
 - **No network.** It makes no requests and loads no remote code. A test
   fails if any of its files names `fetch`, `XMLHttpRequest`, `WebSocket`,
   `eval`, or a URL, or if the manifest asks for more.
-- **Keeps nothing.** A screenshot stays in the browser, in the
-  extension's own storage, while its tab is open, so that reloading the
-  tab keeps it, cropped as you left it. Closing the tab deletes it. Saving and copying are up to
-  you.
-- **Small.** About 750 lines of JavaScript, HTML and CSS in
+- **Keeps nothing.** A screenshot or a video stays in the browser, in
+  the extension's own storage, while its tab is open, so that reloading
+  the tab keeps it, a screenshot cropped as you left it. Closing the tab
+  deletes it. Saving and copying are up to you.
+- **Small.** About 1200 lines of JavaScript, HTML and CSS in
   [`extension/`](extension/), with no dependencies and no build step: the
   release zip is that folder, with the version filled in.
 
@@ -55,9 +60,19 @@ drag the selection to move it, and press **Esc** to clear it.
 - **Crop to selection** keeps only the selection, and **Undo crop**
   (Ctrl+Z) takes that back.
 
-To take a screenshot from the keyboard, set the shortcuts at
-`chrome://extensions/shortcuts`. They have no keys until you choose
-some. If a shortcut cannot take a screenshot, the icon shows a red
+To record a video, choose **Record a video**. The icon shows a red
+**REC** while it records. The tab's sound is recorded too, and you
+still hear it. To stop, click the icon again and choose **Stop
+recording**; the popup shows how long it has been recording. The
+recording also stops when you close the tab. The video opens in a new
+tab, where you can play it, and **Save** (Ctrl+S) saves it in your
+downloads folder: as an MP4 file, or as WebM where Chrome cannot record
+MP4.
+
+To take a screenshot or start a video from the keyboard, set the
+shortcuts at `chrome://extensions/shortcuts`. They have no keys until
+you choose some. The video shortcut starts a recording, and the same
+keys stop it. If a shortcut cannot do its work, the icon shows a red
 **!**, and the reason when you point at it.
 
 Limits:
@@ -72,6 +87,9 @@ Limits:
   fit, and the editor says so.
 - Pages that scroll inside a box of their own, as some web apps do,
   rather than as a whole, come out as one screen.
+- One video at a time. It records the tab at its size on the screen, at
+  up to 30 frames a second, and keeps the whole video in memory until
+  you stop, so a long recording of a busy page uses a lot of memory.
 
 ## Install
 
@@ -113,10 +131,14 @@ Until the setup below is done, the workflow skips. The setup is one time:
    add a new item with the zip from the newest release. Fill in the
    **Store listing** and **Privacy** tabs, and submit it. The privacy
    tab asks for these:
-   - Single purpose: take a screenshot of the current tab, and let the
-     user crop, save or copy it.
-   - `activeTab`: captures the tab the user asked for a screenshot of.
+   - Single purpose: take a screenshot or a video of the current tab,
+     and let the user crop, save or copy it.
+   - `activeTab`: captures the tab the user asked for a screenshot or
+     a video of.
    - `scripting`: scrolls that tab, for a screenshot of the whole page.
+   - `tabCapture`: records that tab, when the user asks for a video.
+   - `offscreen`: opens the extension's hidden page that records the
+     video, because a service worker cannot record.
    - Remote code: none. Data collected: none.
 3. **Create the Google login** for the workflow:
    `scripts/webstore-setup.sh PROJECT_ID filmil/chrome-screenshot`.
@@ -161,7 +183,9 @@ npm run test:e2e    # loads the extension into Chrome for Testing; ~10 s
 It clicks the extension's icon on a local test page, as a user would,
 takes both kinds of screenshot, and checks their size and the colors at
 known places, including where fixed headers, fixed footers and sticky
-bars end up; then it selects, crops, reloads and undoes in the editor. On Ubuntu
+bars end up; then it selects, crops, reloads and undoes in the editor.
+It also records a two-second video from the popup, stops it there, and
+checks the video's size, length, file name and the colors of a frame. On Ubuntu
 23.10 and later, Chrome's sandbox cannot start without user namespaces;
 run it with `E2E_NO_SANDBOX=1`, or allow them with
 `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`. It loads

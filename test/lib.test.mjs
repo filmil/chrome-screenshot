@@ -2,8 +2,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  MAX_AREA, MAX_SIDE, dataUrlToBlob, explainError, fileName, fitScale,
-  moveRect, planTiles, progressText, rectBetween,
+  MAX_AREA, MAX_SIDE, VIDEO_TYPES, dataUrlToBlob, durationText, explainError, fileName, fitScale,
+  moveRect, planTiles, progressText, rectBetween, videoType,
 } from "../extension/lib.js";
 
 test("a page that fits the viewport is one tile", () => {
@@ -79,6 +79,7 @@ test("file names carry the host and the local time", () => {
   assert.equal(fileName(d, undefined), "screenshot-2026-10-04-050607.png");
   assert.equal(fileName(d, "about:blank"), "screenshot-2026-10-04-050607.png");
   assert.equal(fileName(d, "file:///home/x.html"), "screenshot-2026-10-04-050607.png");
+  assert.equal(fileName(d, "https://example.com/", "video", "webm"), "video-example.com-2026-10-04-050607.webm");
 });
 
 test("progress is in whole percent", () => {
@@ -99,5 +100,21 @@ test("errors on pages Chrome protects are explained", () => {
     /does not let extensions capture this page/);
   assert.match(explainError(new Error("The extensions gallery cannot be scripted.")),
     /does not let extensions/);
+  assert.match(explainError(new Error("Chrome pages cannot be captured")), /does not let extensions/);
+  assert.match(explainError(new Error("Extension has not been invoked for the current page (see activeTab permission). Chrome pages cannot be captured.")),
+    /does not let extensions/);
   assert.equal(explainError(new Error("something else")), "something else");
+});
+
+test("a video is recorded in the first format Chrome supports", () => {
+  assert.deepEqual(videoType(() => true), { type: VIDEO_TYPES[0], extension: "mp4" });
+  assert.deepEqual(videoType((t) => t.startsWith("video/webm")),
+    { type: "video/webm;codecs=vp9,opus", extension: "webm" });
+  assert.throws(() => videoType(() => false), /cannot record video/);
+});
+
+test("durations read as minutes and seconds", () => {
+  assert.equal(durationText(0), "0:00");
+  assert.equal(durationText(65_400), "1:05");
+  assert.equal(durationText(3_723_000), "1:02:03");
 });

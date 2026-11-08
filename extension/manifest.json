@@ -2,9 +2,9 @@
   "manifest_version": 3,
   "name": "filmil's screenshot",
   "version": "0.1.0",
-  "description": "Screenshots of what a tab shows, or of the whole page; select a part, save or copy it. No ads, no tracking, no network.",
+  "description": "Screenshots of a tab or the whole page, and videos of a tab. Select, save or copy. No ads, no tracking, no network.",
   "minimum_chrome_version": "120",
-  "permissions": ["activeTab", "scripting"],
+  "permissions": ["activeTab", "scripting", "tabCapture", "offscreen"],
   "background": {
     "service_worker": "background.js",
     "type": "module"
@@ -25,6 +25,9 @@
     },
     "capture-page": {
       "description": "Screenshot of the whole page"
+    },
+    "record-video": {
+      "description": "Start or stop a video of the tab"
     }
   },
   "icons": {

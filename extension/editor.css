@@ -84,3 +84,11 @@ main { padding: 16px; }
   cursor: move;
 }
 #selection[hidden] { display: none; }
+/* The video player shares this page style. */
+#video {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100vh - 100px);
+  background: #000;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 30%);
+}

@@ -259,3 +259,88 @@ test("a page Chrome protects gives a clear error", { timeout: 60_000 }, async ()
   await popup.close();
   await page.close();
 });
+
+// Records `page` for `ms` from the popup, stops from the popup, and
+// returns the player.
+async function record(page, ms) {
+  let popup = await openPopup(page);
+  await popup.click("#record");
+  const started = popup.waitForFunction(() => document.getElementById("error").textContent, { timeout: 0 })
+    .then(async (h) => { throw new Error(`the popup says: ${await h.jsonValue()}`); }, () => {});
+  await Promise.race([new Promise((r) => popup.once("close", r)), started]);
+  await new Promise((r) => setTimeout(r, ms));
+  popup = await openPopup(page);
+  // While it records, the popup offers only Stop.
+  await popup.waitForSelector("#stop", { visible: true });
+  assert.equal(await popup.$eval("#idle", (e) => e.hidden), true);
+  const seen = new Set((await browser.pages()).map((p) => p.target()));
+  const playerOpened = browser.waitForTarget(
+    (t) => t.url().includes("/player.html?id=") && !seen.has(t), { timeout: 30_000 });
+  await popup.click("#stop");
+  const player = await (await playerOpened).asPage();
+  await player.waitForFunction(() => globalThis.screenshotPlayer?.ready(), { timeout: 30_000 });
+  return player;
+}
+
+test("a video of the tab", { timeout: 90_000 }, async () => {
+  const page = await tallPage();
+  const player = await record(page, 2_000);
+  const view = await page.evaluate(() => [innerWidth, innerHeight]);
+  const got = await player.evaluate(() => ({
+    size: globalThis.screenshotPlayer.size(),
+    duration: globalThis.screenshotPlayer.duration(),
+    type: globalThis.screenshotPlayer.type(),
+    name: globalThis.screenshotPlayer.name(),
+  }));
+  assert.deepEqual([got.size.width, got.size.height], view);
+  assert.ok(got.duration >= 1 && got.duration < 10, `duration ${got.duration}`);
+  assert.match(got.type, /^video\/(mp4|webm)$/);
+  console.log(`recorded ${got.type}, ${got.size.width}x${got.size.height}, ${got.duration.toFixed(2)} s`);
+  assert.match(got.name, /^video-127\.0\.0\.1-\d{4}-\d\d-\d\d-\d{6}\.(mp4|webm)$/);
+  // A frame of the video shows the page: the header, and the first band.
+  const colors = await player.evaluate(async () => {
+    const video = document.getElementById("video");
+    video.currentTime = 0.5;
+    await new Promise((r) => { video.onseeked = r; });
+    const canvas = new OffscreenCanvas(video.videoWidth, video.videoHeight);
+    const context = canvas.getContext("2d");
+    context.drawImage(video, 0, 0);
+    return [[400, 20], [400, 300]].map(([x, y]) => [...context.getImageData(x, y, 1, 1).data.slice(0, 3)]);
+  });
+  // Video compression changes colors more than a PNG does, most of all near
+  // edges, so the points are well inside their areas.
+  const near = (a, b) => a.every((v, i) => Math.abs(v - b[i]) <= 40);
+  assert.ok(near(colors[0], HEADER), `header: ${colors[0]}`);
+  assert.ok(near(colors[1], BANDS[0]), `first band: ${colors[1]}`);
+  await player.close();
+  await page.close();
+});
+
+test("closing the player forgets the video", { timeout: 90_000 }, async () => {
+  const page = await tallPage();
+  const player = await record(page, 1_000);
+  const url = player.url();
+  await player.close();
+  const again = await browser.newPage();
+  const deadline = Date.now() + 5_000;
+  let gone = false;
+  while (!gone && Date.now() < deadline) {
+    await again.goto(url);
+    gone = (await again.$eval("#error", (e) => e.textContent)) !== "";
+    if (!gone) await new Promise((r) => setTimeout(r, 200));
+  }
+  assert.ok(gone, "the video is still kept");
+  await again.close();
+  await page.close();
+});
+
+test("a page Chrome protects cannot be recorded either", { timeout: 60_000 }, async () => {
+  const page = await browser.newPage();
+  await page.goto("chrome://version");
+  const popup = await openPopup(page);
+  await popup.click("#record");
+  await popup.waitForFunction(() => document.getElementById("error").textContent !== "");
+  assert.match(await popup.$eval("#error", (e) => e.textContent), /does not let extensions/);
+  await popup.close();
+  await page.close();
+});

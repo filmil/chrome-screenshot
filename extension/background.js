@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
-// Takes a screenshot of the current tab, and opens it in the editor.
+// Takes a screenshot of the current tab, and opens it in the editor; or
+// records a video of the tab, and opens that in the player.
 //
 // The extension can see a tab only after the user clicks its icon, or
 // presses one of its shortcuts, on that tab: that is what the "activeTab"
 // permission gives, until the tab goes to another page. "scripting" lets
-// it scroll that tab, for a screenshot of the whole page.
+// it scroll that tab, for a screenshot of the whole page. "tabCapture"
+// lets it record that tab, and "offscreen" opens the page that does the
+// recording, since a service worker cannot.
 import {
   CAPTURE_INTERVAL_MS, dataUrlToBlob, explainError, fileName, fitScale,
   planTiles, progressText,
 } from "./lib.js";
-import { deleteShot, listShots, putShot } from "./store.js";
+import { deleteShot, getShot, listShots, putShot } from "./store.js";
 
 let busy = false;
 let lastCapture = 0;
@@ -203,7 +206,89 @@ function restorePage() {
   window.scrollTo({ left: state.x, top: state.y, behavior: "instant" });
 }
 
-// Screenshots whose editor tab is gone: closed, or never opened.
+// Videos. The offscreen page recorder.html records one tab at a time, and
+// is open only while it does; it knows which tab and since when, so this
+// worker keeps no state that its own restarts would lose.
+const RECORDER = "recorder.html";
+
+async function recorderOpen() {
+  const pages = await chrome.runtime.getContexts({ contextTypes: ["OFFSCREEN_DOCUMENT"] });
+  return pages.length > 0;
+}
+
+async function toRecorder(message) {
+  const reply = await chrome.runtime.sendMessage({ ...message, target: "recorder" });
+  if (!reply?.ok) throw new Error(reply?.error ?? "The recorder did not answer.");
+  return reply.result;
+}
+
+// { tabId, started } of the video being recorded, or null.
+async function recordingStatus() {
+  return (await recorderOpen()) ? toRecorder({ type: "status" }) : null;
+}
+
+async function startRecording(tabId) {
+  if (busy) throw new Error("A screenshot is being taken.");
+  if (await recordingStatus()) throw new Error("A video is already being recorded.");
+  // Open, but not recording: it is still keeping the last video.
+  if (await recorderOpen()) throw new Error("The last video is still being saved. Try again in a moment.");
+  busy = true;
+  try {
+    await clearIcon(tabId);
+    await prune();
+    const tab = await chrome.tabs.get(tabId);
+    // The tab's size in device pixels: the video is as sharp as the screen.
+    const size = await inTab(tabId, () => ({
+      width: Math.round(innerWidth * devicePixelRatio),
+      height: Math.round(innerHeight * devicePixelRatio),
+    }));
+    const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId });
+    await chrome.offscreen.createDocument({
+      url: RECORDER,
+      reasons: ["USER_MEDIA"],
+      justification: "Records a video of the tab the user asked to record.",
+    });
+    await toRecorder({ type: "start", streamId, tabId, url: tab.url, ...size });
+    await chrome.action.setBadgeBackgroundColor({ tabId, color: "#c5221f" });
+    await chrome.action.setBadgeText({ tabId, text: "REC" });
+    await chrome.action.setTitle({ tabId, title: "Recording a video. Click here to stop it." });
+  } catch (error) {
+    if (!(await recordingStatus().catch(() => null))) {
+      await chrome.offscreen.closeDocument().catch(() => {});
+    }
+    throw new Error(explainError(error));
+  } finally {
+    busy = false;
+  }
+}
+
+// Asks the recorder to stop. It answers at once, and sends "recorded"
+// when the video is kept.
+async function stopRecording() {
+  if (!(await recordingStatus())) throw new Error("No video is being recorded.");
+  await toRecorder({ type: "stop" });
+}
+
+// Opens the video `id` in the player, beside tab `tabId` if it is still
+// open, and closes the recorder.
+async function recorded(id, tabId) {
+  await clearIcon(tabId);
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  const player = await chrome.tabs.create({
+    url: `player.html?id=${id}`,
+    ...(tab ? { index: tab.index + 1, openerTabId: tab.id, windowId: tab.windowId } : {}),
+  });
+  const video = await getShot(id);
+  if (video) await putShot({ ...video, editorTabId: player.id });
+}
+
+async function recordingFailed(tabId, message) {
+  await chrome.action.setBadgeBackgroundColor({ tabId, color: "#c5221f" }).catch(() => {});
+  await chrome.action.setBadgeText({ tabId, text: "!" }).catch(() => {});
+  await chrome.action.setTitle({ tabId, title: message }).catch(() => {});
+}
+
+// Screenshots and videos whose tab is gone: closed, or never opened.
 async function prune() {
   for (const shot of await listShots()) {
     const open = shot.editorTabId !== undefined
@@ -224,12 +309,18 @@ chrome.runtime.onStartup.addListener(() => prune());
 // icon: a red "!", and the message when the pointer is over it.
 chrome.commands.onCommand.addListener(async (command, tab) => {
   const modes = { "capture-visible": "visible", "capture-page": "page" };
-  if (!modes[command] || tab?.id === undefined) return;
+  if ((!modes[command] && command !== "record-video") || tab?.id === undefined) return;
   const tabId = tab.id;
   // A second press while the first is still at work does nothing.
   if (busy) return;
   try {
-    await capture(tabId, modes[command]);
+    if (command === "record-video") {
+      // The same keys start a video and stop it.
+      if (await recordingStatus()) await stopRecording();
+      else await startRecording(tabId);
+    } else {
+      await capture(tabId, modes[command]);
+    }
   } catch (error) {
     await chrome.action.setBadgeBackgroundColor({ tabId, color: "#c5221f" }).catch(() => {});
     await chrome.action.setBadgeText({ tabId, text: "!" }).catch(() => {});
@@ -237,12 +328,27 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
   }
 });
 
-// Only this extension's own popup can send these.
+// Only this extension's own popup and recorder can send these. Messages
+// for the recorder have the target "recorder"; this worker leaves them.
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
-  if (sender.id !== chrome.runtime.id || message.type !== "capture") return false;
-  capture(message.tabId, message.mode === "page" ? "page" : "visible").then(
+  if (sender.id !== chrome.runtime.id || message.target === "recorder") return false;
+  const work = {
+    capture: () => capture(message.tabId, message.mode === "page" ? "page" : "visible"),
+    record: () => startRecording(message.tabId),
+    stop: () => stopRecording(),
+    status: () => recordingStatus(),
+    recorded: () => recorded(message.id, message.tabId),
+    "record-failed": () => recordingFailed(message.tabId, message.error),
+  }[message.type];
+  if (!work) return false;
+  work().then(
     (result) => reply({ ok: true, result }),
     (error) => reply({ ok: false, error: error.message }),
-  );
+  ).finally(async () => {
+    // The recorder has done its work once the video is kept, or lost.
+    if (message.type === "recorded" || message.type === "record-failed") {
+      await chrome.offscreen.closeDocument().catch(() => {});
+    }
+  });
   return true; // reply is sent asynchronously
 });

@@ -8,13 +8,25 @@
 </head>
 <body>
   <h1>filmil's screenshot</h1>
-  <p class="hint">Take a screenshot of this tab:</p>
-  <div class="column">
-    <button id="visible" type="button">What is on screen</button>
-    <button id="page" type="button">The whole page</button>
+  <div id="idle">
+    <p class="hint">Take a screenshot of this tab:</p>
+    <div class="column">
+      <button id="visible" type="button">What is on screen</button>
+      <button id="page" type="button">The whole page</button>
+    </div>
+    <p class="hint">Or record what the tab shows, with its sound:</p>
+    <div class="column">
+      <button id="record" type="button">Record a video</button>
+    </div>
+    <p class="hint">It opens in a new tab, where you can select part of a
+      screenshot, and save or copy it, or play and save a video.</p>
   </div>
-  <p class="hint">It opens in a new tab, where you can select part of it,
-    and save or copy it.</p>
+  <div id="recording" hidden>
+    <p class="hint" id="elapsed">Recording a video.</p>
+    <div class="column">
+      <button id="stop" type="button">Stop recording</button>
+    </div>
+  </div>
   <p id="status" role="status"></p>
   <p id="error" role="alert"></p>
 </body>
