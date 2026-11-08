@@ -16,8 +16,8 @@
 # No key is created. Running it again changes nothing; running it with a
 # new repository adds that repository.
 #
-# usage: scripts/webstore-setup.sh PROJECT_ID REPOSITORY [REPOSITORY...]
-#   e.g. scripts/webstore-setup.sh filmil-webstore filmil/chrome-screenshot
+# usage: bazel run //:webstore_setup -- PROJECT_ID REPOSITORY [REPOSITORY...]
+#   e.g. bazel run //:webstore_setup -- filmil-webstore filmil/chrome-screenshot
 # All repositories must have the same owner. Needs gcloud, logged in as
 # an owner of the project, and curl.
 set -euo pipefail

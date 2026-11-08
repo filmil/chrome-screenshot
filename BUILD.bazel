@@ -7,6 +7,7 @@ load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:zip.bzl", "pkg_zip")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//bazel:defs.bzl", "extension_manifest", "node_test", "package_variables")
 load("//bazel:defs_test.bzl", "version_test_suite")
 
@@ -87,4 +88,12 @@ node_test(
 sh_binary(
     name = "webstore_setup",
     srcs = ["scripts/webstore-setup.sh"],
+)
+
+# The setup script refuses bad arguments before it calls gcloud or the
+# network.
+sh_test(
+    name = "webstore_setup_test",
+    srcs = ["test/webstore_setup_test.sh"],
+    data = ["scripts/webstore-setup.sh"],
 )
