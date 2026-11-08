@@ -4,6 +4,7 @@ module(name = "chrome_screenshot")
 bazel_dep(name = "bazel_skylib", version = "1.9.2")
 bazel_dep(name = "rules_nodejs", version = "6.7.7")
 bazel_dep(name = "rules_pkg", version = "1.3.0")
+bazel_dep(name = "rules_shell", version = "0.8.0")
 
 # Node runs the tests and fills the version into the manifest. Bazel
 # downloads it by checksum; nothing comes from the machine.

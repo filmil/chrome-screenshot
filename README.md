@@ -155,7 +155,7 @@ Until the setup below is done, the workflow skips. The setup is one time:
      video, because a service worker cannot record.
    - Remote code: none. Data collected: none.
 3. **Create the Google login** for the workflow:
-   `scripts/webstore-setup.sh PROJECT_ID filmil/chrome-screenshot`.
+   `bazel run //:webstore_setup -- PROJECT_ID filmil/chrome-screenshot`.
    One Google Cloud project serves all your extensions, so if it already
    serves another one, run it with the same project ID; it adds this
    repository. It lets GitHub Actions log in as the store's service
