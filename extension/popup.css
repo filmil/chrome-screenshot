@@ -36,8 +36,11 @@ button {
   font: inherit;
   cursor: pointer;
 }
-button#visible, button#page { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+button#visible, button#page, button#record { background: var(--accent); border-color: var(--accent); color: var(--bg); }
 button:disabled { opacity: 0.5; cursor: default; }
 #status { margin: 4px 0 0; color: var(--muted); min-height: 1.4em; }
 #error { margin: 4px 0 0; color: var(--error); }
 #error:empty { display: none; }
+button#record, button#stop { background: var(--error); border-color: var(--error); color: var(--bg); }
+[hidden] { display: none !important; }
+label { display: flex; align-items: center; gap: 6px; }

@@ -58,8 +58,9 @@ export function moveRect(rect, dx, dy, width, height) {
 }
 
 // "screenshot-example.com-2026-10-24-153012.png", in local time. The host
-// is left out when it is not known.
-export function fileName(date, url) {
+// is left out when it is not known. A video is "video-...", with the
+// extension of its format.
+export function fileName(date, url, kind = "screenshot", extension = "png") {
   const p = (n) => String(n).padStart(2, "0");
   const stamp = `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())}`
     + `-${p(date.getHours())}${p(date.getMinutes())}${p(date.getSeconds())}`;
@@ -69,7 +70,7 @@ export function fileName(date, url) {
   } catch {
     // No URL, or not one with a host.
   }
-  return `screenshot-${host ? `${host}-` : ""}${stamp}.png`;
+  return `${kind}-${host ? `${host}-` : ""}${stamp}.${extension}`;
 }
 
 // The badge while a page is captured: "40%".
@@ -88,10 +89,49 @@ export function dataUrlToBlob(url) {
 // A message for the user, from an error that Chrome gives.
 export function explainError(error) {
   const text = String(error?.message ?? error);
-  if (/cannot (access|be scripted)|chrome:\/\/|extensions gallery|activeTab|permission/i.test(text)) {
+  if (/cannot (access|be scripted)|chrome:\/\/|chrome pages|extensions gallery|activeTab|permission|has not been invoked/i.test(text)) {
     return "Chrome does not let extensions capture this page. Pages such as "
       + "chrome:// pages, the Chrome Web Store, and other extensions' pages "
       + "cannot be captured.";
   }
   return text;
+}
+
+// The formats a video is recorded in, best first: MP4 plays almost
+// everywhere; WebM is what every Chrome can record.
+// H.264 level 5.1 (avc1.640033) covers sizes up to 4096 x 2304.
+export const VIDEO_TYPES = [
+  "video/mp4;codecs=avc1.640033,mp4a.40.2",
+  "video/mp4",
+  "video/webm;codecs=vp9,opus",
+  "video/webm",
+];
+
+// The first of VIDEO_TYPES that `supported` (MediaRecorder.isTypeSupported)
+// accepts, and the file extension that goes with it.
+export function videoType(supported) {
+  const type = VIDEO_TYPES.find((t) => supported(t));
+  if (!type) throw new Error("This Chrome cannot record video.");
+  return { type, extension: type.startsWith("video/mp4") ? "mp4" : "webm" };
+}
+
+// "1:05", or "1:02:03" for an hour or more.
+export function durationText(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const p = (n) => String(n).padStart(2, "0");
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const sec = p(total % 60);
+  return h ? `${h}:${p(m)}:${sec}` : `${m}:${sec}`;
+}
+
+// A recording stops by itself after 5 minutes, and runs for at least a
+// second.
+export const MAX_VIDEO_MS = 5 * 60_000;
+export const MIN_VIDEO_MS = 1_000;
+
+// `n`, rounded down to an even number, and at least 2: video encoders
+// need even sizes.
+export function even(n) {
+  return Math.max(2, 2 * Math.floor(n / 2));
 }

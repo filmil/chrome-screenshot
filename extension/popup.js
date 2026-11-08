@@ -1,23 +1,63 @@
 // SPDX-License-Identifier: Apache-2.0
-const $ = (id) => document.getElementById(id);
+import { durationText } from "./lib.js";
 
-async function take(mode) {
+const $ = (id) => document.getElementById(id);
+const buttons = ["visible", "page", "record", "stop"];
+
+async function ask(message) {
+  const reply = await chrome.runtime.sendMessage(message);
+  if (!reply?.ok) throw new Error(reply?.error ?? "No reply from the extension.");
+  return reply.result;
+}
+
+const statusText = {
+  page: "Scrolling through the page…",
+  visible: "Taking the screenshot…",
+  record: "Starting the recording…",
+  stop: "Stopping the recording…",
+};
+
+// Sends `type` ("capture", "record" or "stop") for this tab, and closes
+// the popup when it worked.
+async function run(type, mode, extra = {}) {
   $("error").textContent = "";
-  $("visible").disabled = $("page").disabled = true;
-  $("status").textContent = mode === "page"
-    ? "Scrolling through the page…" : "Taking the screenshot…";
+  for (const id of buttons) $(id).disabled = true;
+  $("status").textContent = statusText[mode ?? type];
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab) throw new Error("No tab to capture.");
-    const reply = await chrome.runtime.sendMessage({ type: "capture", mode, tabId: tab.id });
-    if (!reply?.ok) throw new Error(reply?.error ?? "No reply from the extension.");
+    await ask({ type, mode, tabId: tab.id, ...extra });
     window.close();
   } catch (e) {
     $("status").textContent = "";
     $("error").textContent = e.message;
-    $("visible").disabled = $("page").disabled = false;
+    for (const id of buttons) $(id).disabled = false;
   }
 }
 
-$("visible").addEventListener("click", () => take("visible"));
-$("page").addEventListener("click", () => take("page"));
+$("visible").addEventListener("click", () => run("capture", "visible"));
+$("page").addEventListener("click", () => run("capture", "page"));
+// Sound is off unless the user ticks the box, each time.
+$("record").addEventListener("click", () => run("record", undefined, { sound: $("sound").checked }));
+$("stop").addEventListener("click", () => run("stop"));
+
+// While a video is recorded, the popup offers only to stop it.
+async function init() {
+  const recording = await ask({ type: "status" }).catch(() => null);
+  if (!recording) return;
+  $("idle").hidden = true;
+  $("recording").hidden = false;
+  if (recording.stopping) {
+    $("elapsed").textContent = "Saving the video…";
+    $("stop").disabled = true;
+    return;
+  }
+  const tick = () => {
+    $("elapsed").textContent = `Recording a video: ${durationText(Date.now() - recording.started)}`
+      + ` of at most ${durationText(recording.limit)}.`;
+  };
+  tick();
+  setInterval(tick, 1000);
+}
+
+init();

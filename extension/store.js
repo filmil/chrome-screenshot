@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-// Screenshots on their way from the service worker to the editor tab, in
-// the extension's own IndexedDB. A screenshot stays while its editor tab
-// is open, so that reloading the tab keeps it, and goes when the tab
-// closes. Nothing here leaves the browser.
+// Screenshots on their way from the service worker to the editor tab, and
+// videos on their way from the recorder to the player tab, in the
+// extension's own IndexedDB. Each stays while its tab is open, so that
+// reloading the tab keeps it, and goes when the tab closes. Nothing here
+// leaves the browser.
 //
-// A shot is { id, blob, name, created, editorTabId, scaled }.
+// A screenshot is { id, blob, name, created, editorTabId, scaled }.
+// A video is { id, kind: "video", blob, name, created, duration,
+// editorTabId }, with the player's tab as its editorTabId.
 
 const DB = "screenshots";
 const STORE = "shots";

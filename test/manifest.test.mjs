@@ -8,8 +8,9 @@ import { test } from "node:test";
 const dir = new URL("../extension/", import.meta.url);
 const manifest = JSON.parse(readFileSync(new URL("manifest.json", dir), "utf8"));
 
-test("permissions are only activeTab and scripting", () => {
-  assert.deepEqual([...manifest.permissions].sort(), ["activeTab", "scripting"]);
+test("permissions are only activeTab, scripting, tabCapture and offscreen", () => {
+  assert.deepEqual([...manifest.permissions].sort(),
+    ["activeTab", "offscreen", "scripting", "tabCapture"]);
   for (const key of ["host_permissions", "optional_permissions",
     "optional_host_permissions", "content_scripts", "externally_connectable",
     "web_accessible_resources"]) {
@@ -43,6 +44,13 @@ test("the name says whose extension it is", () => {
   assert.match(popup, new RegExp(`<title>${name}</title>`));
   assert.match(popup, new RegExp(`<h1>${name}</h1>`));
   assert.ok(manifest.description.length <= 132, "Chrome allows 132 characters");
+});
+
+test("the recorder page is in the extension", () => {
+  const worker = readFileSync(new URL("background.js", dir), "utf8");
+  const page = /const RECORDER = "([^"]+)"/.exec(worker)?.[1];
+  assert.ok(page, "background.js names its recorder page");
+  assert.match(readFileSync(new URL(page, dir), "utf8"), /recorder\.js/);
 });
 
 test("each shortcut the worker handles is declared", () => {
