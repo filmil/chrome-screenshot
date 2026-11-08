@@ -34,9 +34,47 @@ async function captureTab(tab) {
 }
 
 // Takes away the progress, or an error that a shortcut left, from the icon.
+// A null removes the tab's own badge text, so the icon shows what every
+// tab shows: REC while a video is recorded.
 async function clearIcon(tabId) {
-  await chrome.action.setBadgeText({ tabId, text: "" }).catch(() => {});
-  await chrome.action.setTitle({ tabId, title: "" }).catch(() => {});
+  await chrome.action.setBadgeText({ tabId, text: null }).catch(() => {});
+  await chrome.action.setTitle({ tabId, title: chrome.runtime.getManifest().action.default_title })
+    .catch(() => {});
+}
+
+// The icon while a video is recorded: a red dot on white, as on a camera.
+function recordingIcon() {
+  const images = {};
+  for (const size of [16, 32]) {
+    const canvas = new OffscreenCanvas(size, size);
+    const context = canvas.getContext("2d");
+    context.fillStyle = "#ffffff";
+    context.beginPath();
+    context.arc(size / 2, size / 2, size / 2, 0, 2 * Math.PI);
+    context.fill();
+    context.fillStyle = "#d93025";
+    context.beginPath();
+    context.arc(size / 2, size / 2, size * 0.36, 0, 2 * Math.PI);
+    context.fill();
+    images[size] = context.getImageData(0, 0, size, size);
+  }
+  return images;
+}
+
+// Shows in every tab and window that a video is being recorded: a red dot
+// for the icon, a red REC under it, and a title that says so. `false`
+// puts the usual icon back.
+async function showRecording(on) {
+  const icon = on
+    ? { imageData: recordingIcon() }
+    : { path: chrome.runtime.getManifest().action.default_icon };
+  await chrome.action.setIcon(icon).catch(() => {});
+  await chrome.action.setBadgeBackgroundColor({ color: "#d93025" }).catch(() => {});
+  await chrome.action.setBadgeText({ text: on ? "REC" : "" }).catch(() => {});
+  await chrome.action.setTitle({
+    title: on ? "Recording a video of a tab. Click here to stop it."
+      : chrome.runtime.getManifest().action.default_title,
+  }).catch(() => {});
 }
 
 // Takes a screenshot of tab `tabId`: of what it shows ("visible"), or of
@@ -70,7 +108,7 @@ async function capture(tabId, mode) {
     throw new Error(explainError(error));
   } finally {
     busy = false;
-    await chrome.action.setBadgeText({ tabId, text: "" }).catch(() => {});
+    await chrome.action.setBadgeText({ tabId, text: null }).catch(() => {});
   }
 }
 
@@ -268,10 +306,7 @@ async function startRecording(tabId, sound) {
   } finally {
     busy = false;
   }
-  await chrome.action.setBadgeBackgroundColor({ tabId, color: "#c5221f" }).catch(() => {});
-  await chrome.action.setBadgeText({ tabId, text: "REC" }).catch(() => {});
-  await chrome.action.setTitle({ tabId, title: "Recording a video. Click here to stop it." })
-    .catch(() => {});
+  await showRecording(true);
 }
 
 // Asks the recorder to stop. It answers at once, and sends "recorded"
@@ -285,6 +320,7 @@ async function stopRecording() {
 // Opens the video `id` in the player, beside tab `tabId` if it is still
 // open, and closes the recorder.
 async function recorded(id, tabId) {
+  await showRecording(false);
   await clearIcon(tabId);
   const tab = await chrome.tabs.get(tabId).catch(() => null);
   const player = await chrome.tabs.create({
@@ -296,6 +332,7 @@ async function recorded(id, tabId) {
 }
 
 async function recordingFailed(tabId, message) {
+  await showRecording(false);
   await chrome.action.setBadgeBackgroundColor({ tabId, color: "#c5221f" }).catch(() => {});
   await chrome.action.setBadgeText({ tabId, text: "!" }).catch(() => {});
   await chrome.action.setTitle({ tabId, title: message }).catch(() => {});

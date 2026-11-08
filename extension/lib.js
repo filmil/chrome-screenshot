@@ -125,8 +125,10 @@ export function durationText(ms) {
   return h ? `${h}:${p(m)}:${sec}` : `${m}:${sec}`;
 }
 
-// A recording stops by itself after 5 minutes.
+// A recording stops by itself after 5 minutes, and runs for at least a
+// second.
 export const MAX_VIDEO_MS = 5 * 60_000;
+export const MIN_VIDEO_MS = 1_000;
 
 // `n`, rounded down to an even number, and at least 2: video encoders
 // need even sizes.

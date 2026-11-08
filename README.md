@@ -63,8 +63,10 @@ drag the selection to move it, and press **Esc** to clear it.
 - **Crop to selection** keeps only the selection, and **Undo crop**
   (Ctrl+Z) takes that back.
 
-To record a video, choose **Record a video**. The icon shows a red
-**REC** while it records. Sound is not recorded unless you tick
+To record a video, choose **Record a video**. While it records, the
+extension's icon turns into a red dot with a red **REC** under it, in
+every tab and every window, so you can see that a recording is on
+wherever you are. Sound is not recorded unless you tick
 **Record sound** first; you still hear the tab either way. To stop,
 click the icon again and choose **Stop recording**; the popup shows how
 long it has been recording. The recording also stops when you close the

@@ -3,7 +3,7 @@
 // cannot use MediaRecorder. The worker opens this page for one recording
 // and closes it after. The video goes to the extension's own storage, as a
 // screenshot does, and the worker opens it in a tab.
-import { MAX_VIDEO_MS, even, fileName, videoType } from "./lib.js";
+import { MAX_VIDEO_MS, MIN_VIDEO_MS, even, fileName, videoType } from "./lib.js";
 import { putShot } from "./store.js";
 
 // The recording, from start until its video is kept or lost:
@@ -74,6 +74,10 @@ async function stop() {
   r.stopping = true;
   clearTimeout(r.timer);
   try {
+    // A video stopped in its first moments can hold no frame, and then no
+    // player can play it; so it runs for at least a second.
+    const wait = r.started + MIN_VIDEO_MS - Date.now();
+    if (wait > 0 && r.recorder.state !== "inactive") await new Promise((ok) => setTimeout(ok, wait));
     if (r.recorder.state !== "inactive") r.recorder.stop();
     await r.done;
     for (const track of r.stream.getTracks()) track.stop();

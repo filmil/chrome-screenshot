@@ -279,7 +279,9 @@ async function playerOf(stopping) {
     (t) => t.url().includes("/player.html?id=") && !seen.has(t), { timeout: 30_000 });
   await stopping();
   const player = await (await playerOpened).asPage();
-  await player.waitForFunction(() => globalThis.screenshotPlayer?.ready(), { timeout: 30_000 });
+  await player.waitForFunction(() => globalThis.screenshotPlayer?.ready()
+    || document.getElementById("error").textContent, { timeout: 30_000 });
+  assert.equal(await player.$eval("#error", (e) => e.textContent), "", "the player's error");
   return player;
 }
 
@@ -331,6 +333,42 @@ test("a video of the tab", { timeout: 90_000 }, async () => {
   const near = (a, b) => a.every((v, i) => Math.abs(v - b[i]) <= 40);
   assert.ok(near(colors[0], HEADER), `header: ${colors[0]}`);
   assert.ok(near(colors[1], BANDS[0]), `first band: ${colors[1]}`);
+  await player.close();
+  await page.close();
+});
+
+// The extension's service worker, to read its icon's state.
+async function worker() {
+  const target = await browser.waitForTarget(
+    (t) => t.type() === "service_worker" && t.url().startsWith(`chrome-extension://${extension.id}/`));
+  return target.worker();
+}
+
+test("while it records, every tab's icon says so", { timeout: 90_000 }, async () => {
+  const page = await tallPage();
+  // A screenshot first leaves the tab's own badge text behind; a recording
+  // must show through it.
+  const editor = await shoot(page, "visible");
+  await editor.close();
+  const other = await tallPage();
+  await startRecording(page);
+  const sw = await worker();
+  const badge = (tabId) => sw.evaluate((tabId) => chrome.action.getBadgeText(tabId === null ? {} : { tabId }), tabId);
+  // Every tab: the extension sees the address of none but the recorded one.
+  const tabIds = await sw.evaluate(async () => (await chrome.tabs.query({})).map((t) => t.id));
+  assert.ok(tabIds.length >= 2);
+  assert.equal(await badge(null), "REC");
+  for (const id of tabIds) assert.equal(await badge(id), "REC", `tab ${id}`);
+  assert.match(await sw.evaluate(() => chrome.action.getTitle({})), /Recording a video/);
+  await other.close();
+  const player = await playerOf(async () => {
+    const popup = await openPopup(page);
+    await popup.click("#stop");
+  });
+  assert.equal(await badge(null), "");
+  for (const id of tabIds.filter((id) => id !== undefined)) {
+    assert.equal(await badge(id).catch(() => ""), "", `tab ${id}`);
+  }
   await player.close();
   await page.close();
 });
